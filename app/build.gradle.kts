@@ -1,4 +1,17 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
+
+val releaseKeystorePropertiesFile = rootProject.file("keystore.properties")
+val releaseKeystoreProperties = Properties().apply {
+  check(releaseKeystorePropertiesFile.isFile) {
+    "Release keystore properties file not found: ${releaseKeystorePropertiesFile.absolutePath}"
+  }
+  releaseKeystorePropertiesFile.inputStream().use(::load)
+}
+
+fun Properties.requiredProperty(name: String): String =
+  getProperty(name)?.takeIf(String::isNotBlank)
+    ?: error("Missing required '$name' in ${releaseKeystorePropertiesFile.absolutePath}")
 
 plugins {
   alias(libs.plugins.android.application)
@@ -9,43 +22,48 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "lamz.netblocker"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.netblocker.fwkz"
+    applicationId = "lamz.netblocker"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    externalNativeBuild {
+      ndkBuild {
+        arguments += "NDK_APPLICATION_MK=${file("src/main/jni/hev-socks5-tunnel/Application.mk").absolutePath}"
+      }
+    }
   }
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      storeFile = file(releaseKeystoreProperties.requiredProperty("storeFile"))
+      storePassword = releaseKeystoreProperties.requiredProperty("storePassword")
+      keyAlias = releaseKeystoreProperties.requiredProperty("keyAlias")
+      keyPassword = releaseKeystoreProperties.requiredProperty("keyPassword")
     }
   }
 
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
+      isDebuggable = false
+      isJniDebuggable = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      // Use Android Gradle Plugin's default debug keystore. It is created
+      // automatically when absent, unlike the old project-local override.
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -54,6 +72,11 @@ android {
   buildFeatures {
     compose = true
     buildConfig = true
+  }
+  externalNativeBuild {
+    ndkBuild {
+      path = file("src/main/jni/hev-socks5-tunnel/Android.mk")
+    }
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
