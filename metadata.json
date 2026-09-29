@@ -1,0 +1,6 @@
+{
+  "name": "NetBlocker",
+  "description": "Per-app local VPN firewall to protect privacy and save mobile data.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
