@@ -36,6 +36,7 @@ class FirewallRepository(
     val blockByDefaultFlow: Flow<Boolean> = preferences.blockByDefaultFlow
     val blockBackgroundGlobalFlow: Flow<Boolean> = preferences.blockBackgroundGlobalFlow
     val adBlockingEnabledFlow: Flow<Boolean> = preferences.adBlockingEnabledFlow
+    val customDomainBlocklistFlow: Flow<Set<String>> = preferences.customDomainBlocklistFlow
     val activeNetworkTypeFlow: Flow<NetworkType> = networkMonitor.networkType
 
     suspend fun setFirewallEnabled(enabled: Boolean) {
@@ -56,6 +57,18 @@ class FirewallRepository(
 
     suspend fun setAdBlockingEnabled(enabled: Boolean) {
         preferences.setAdBlockingEnabled(enabled)
+    }
+
+    suspend fun addCustomBlockedDomain(domain: String) {
+        val normalized = domain.trim().lowercase().trimEnd('.')
+        require(normalized.matches(Regex("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"))) {
+            "Enter a valid domain name, without a scheme or path."
+        }
+        preferences.addCustomBlockedDomain(normalized)
+    }
+
+    suspend fun removeCustomBlockedDomain(domain: String) {
+        preferences.removeCustomBlockedDomain(domain)
     }
 
     fun getLogsFlow(): Flow<List<FirewallLog>> {

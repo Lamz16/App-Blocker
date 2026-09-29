@@ -28,6 +28,13 @@ class SettingsViewModel(
     private val _hasUsagePermission = MutableStateFlow(usageStatsHelper.hasUsageStatsPermission())
     val hasUsagePermission = _hasUsagePermission.asStateFlow()
 
+    val customBlockedDomains: StateFlow<Set<String>> = repository.customDomainBlocklistFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptySet()
+        )
+
     val uiState: StateFlow<SettingsUiState> = combine(
         repository.showSystemAppsFlow,
         repository.blockByDefaultFlow,
@@ -73,6 +80,18 @@ class SettingsViewModel(
     fun setAdBlockingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setAdBlockingEnabled(enabled)
+        }
+    }
+
+    fun addCustomBlockedDomain(domain: String) {
+        viewModelScope.launch {
+            runCatching { repository.addCustomBlockedDomain(domain) }
+        }
+    }
+
+    fun removeCustomBlockedDomain(domain: String) {
+        viewModelScope.launch {
+            repository.removeCustomBlockedDomain(domain)
         }
     }
 }

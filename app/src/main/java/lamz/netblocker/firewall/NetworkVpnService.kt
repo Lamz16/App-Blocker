@@ -12,7 +12,6 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import hev.htproxy.TProxyService
 import lamz.netblocker.MainActivity
 import lamz.netblocker.R
 import lamz.netblocker.data.local.AppDatabase
@@ -28,7 +27,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.net.InetAddress
@@ -77,8 +75,6 @@ class NetworkVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var packetWorkerJob: Job? = null
     private var networkMonitorJob: Job? = null
-    private var adBlockSettingsJob: Job? = null
-    private var localSocksProxy: LocalSocks5Proxy? = null
 
     private lateinit var database: AppDatabase
     private lateinit var preferences: FirewallPreferences
@@ -127,10 +123,6 @@ class NetworkVpnService : VpnService() {
                 reloadVpnRules()
             }
         }
-        adBlockSettingsJob?.cancel()
-        adBlockSettingsJob = serviceScope.launch {
-            preferences.adBlockingEnabledFlow.collectLatest { reloadVpnRules() }
-        }
     }
 
     private suspend fun reloadVpnRules() {
@@ -145,7 +137,6 @@ class NetworkVpnService : VpnService() {
             )
         }
         val currentNetwork = networkMonitor.determineCurrentNetworkType()
-        val adBlockingEnabled = preferences.adBlockingEnabledFlow.first()
         val blockedPackages = ruleManager.computeBlockedPackages(
             rules = rules,
             firewallEnabled = true,
@@ -153,15 +144,12 @@ class NetworkVpnService : VpnService() {
         )
 
         updateNotification(blockedPackages.size, currentNetwork)
-        setupVpnInterface(blockedPackages, adBlockingEnabled)
+        setupVpnInterface(blockedPackages)
     }
 
-    private fun setupVpnInterface(blockedPackages: Set<String>, adBlockingEnabled: Boolean) {
+    private fun setupVpnInterface(blockedPackages: Set<String>) {
         try {
             packetWorkerJob?.cancel()
-            runCatching { TProxyService.TProxyStopService() }
-            localSocksProxy?.stop()
-            localSocksProxy = null
             vpnInterface?.close()
             vpnInterface = null
 
@@ -170,17 +158,10 @@ class NetworkVpnService : VpnService() {
                 .setMtu(1500)
                 .addAddress("10.254.1.1", 32)
                 .addRoute("0.0.0.0", 0)
-                .addAddress("fd00:1::1", 128)
-                .addRoute("::", 0)
 
-            // In full-tunnel ad blocking mode DNS is sent through tun2socks to
-            // a real resolver, where LocalSocks5Proxy can inspect and filter it.
-            builder.addDnsServer(if (adBlockingEnabled) "1.1.1.1" else "10.254.1.1")
-
-            if (adBlockingEnabled) {
-                setupAdBlockingTunnel(builder)
-                return
-            }
+            builder.addDnsServer("10.254.1.1")
+            builder.addAddress("fd00:1::1", 128)
+            builder.addRoute("::", 0)
 
             val pm = packageManager
             var addedCount = 0
@@ -207,55 +188,12 @@ class NetworkVpnService : VpnService() {
             vpnInterface?.let { pfd ->
                 startPacketConsumer(pfd, blockedPackages)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun setupAdBlockingTunnel(builder: Builder) {
-        // Full-tunnel mode is required so DNS requests and HTTPS CONNECT flows can
-        // reach the local filtering proxy. The app itself is excluded to prevent
-        // its protected forwarding sockets from looping back into the VPN.
-        builder.addDisallowedApplication(packageName)
-        vpnInterface = builder.establish()
-        val tunnel = vpnInterface ?: return
-        val proxy = LocalSocks5Proxy(this) { domain, category -> logBlockedDomain(domain, category) }
-        proxy.start()
-        localSocksProxy = proxy
-        val config = java.io.File(filesDir, "hev-socks5-tunnel.yml").apply {
-            writeText(
-                """
-                tunnel:
-                  mtu: 1500
-                  ipv4: 10.254.1.1
-                  ipv6: 'fd00:1::1'
-                socks5:
-                  address: 127.0.0.1
-                  port: ${proxy.port}
-                  udp: 'udp'
-                misc:
-                  log-level: warn
-                """.trimIndent()
-            )
-        }
-        check(TProxyService.TProxyStartService(config.absolutePath, tunnel.fd)) {
-            "Unable to start the native network tunnel"
-        }
-    }
-
-    private fun logBlockedDomain(domain: String, category: String) {
-        serviceScope.launch {
-            database.firewallLogDao().insertLog(
-                FirewallLogEntity(
-                    packageName = packageName,
-                    appName = "NetBlocker DNS",
-                    action = "BLOCKED_$category",
-                    networkType = networkMonitor.determineCurrentNetworkType().name,
-                    destinationIp = domain,
-                    destinationPort = 53,
-                    protocol = "DNS"
-                )
-            )
+        } catch (error: Throwable) {
+            runCatching { vpnInterface?.close() }
+            vpnInterface = null
+            _isServiceRunning.value = false
+            stopSelf()
+            error.printStackTrace()
         }
     }
 
@@ -336,10 +274,6 @@ class NetworkVpnService : VpnService() {
         _isServiceRunning.value = false
         packetWorkerJob?.cancel()
         networkMonitorJob?.cancel()
-        adBlockSettingsJob?.cancel()
-        runCatching { TProxyService.TProxyStopService() }
-        localSocksProxy?.stop()
-        localSocksProxy = null
 
         try {
             vpnInterface?.close()
@@ -435,8 +369,6 @@ class NetworkVpnService : VpnService() {
         super.onDestroy()
         _isServiceRunning.value = false
         networkMonitor.unregister()
-        runCatching { TProxyService.TProxyStopService() }
-        localSocksProxy?.stop()
         serviceScope.cancel()
         try {
             vpnInterface?.close()

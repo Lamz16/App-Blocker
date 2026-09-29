@@ -34,7 +34,13 @@ class ActivityViewModel(
         val filteredLogs = if (filter == null) {
             logs
         } else {
-            logs.filter { it.action.equals(filter, ignoreCase = true) }
+            logs.filter { log ->
+                when (filter) {
+                    "BLOCKED" -> log.action.startsWith("BLOCKED", ignoreCase = true)
+                    "ALLOWED" -> log.action.startsWith("ALLOWED", ignoreCase = true)
+                    else -> log.action.equals(filter, ignoreCase = true)
+                }
+            }
         }
         ActivityUiState(
             logs = filteredLogs,

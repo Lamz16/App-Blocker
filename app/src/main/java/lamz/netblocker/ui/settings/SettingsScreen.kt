@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DataUsage
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
@@ -31,12 +32,17 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +60,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val customBlockedDomains by viewModel.customBlockedDomains.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var domainInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.refreshUsagePermission()
@@ -78,6 +86,61 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Custom Domain Blocklist (Unavailable)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "DNS filtering has been disabled until a stable forwarding backend is available. Existing entries are not active.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = domainInput,
+                            onValueChange = { domainInput = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("Domain") },
+                            placeholder = { Text("ads.example.com") }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {},
+                            enabled = false
+                        ) { Text("Add") }
+                    }
+                    if (customBlockedDomains.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        customBlockedDomains.sorted().forEach { domain ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(domain, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                TextButton(onClick = {}, enabled = false) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Remove $domain", modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Remove")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Firewall Preferences Card
@@ -110,13 +173,10 @@ fun SettingsScreen(
                     )
 
                     SettingToggleRow(
-                        title = "Block Ads & Dangerous Redirects",
-                        subtitle = "Routes browser DNS through the on-device filter to block known advertising, tracking, malware and redirect domains. Secure DNS in a browser can bypass this protection.",
-                        checked = uiState.adBlockingEnabled,
-                        onCheckedChange = {
-                            viewModel.setAdBlockingEnabled(it)
-                            NetworkVpnService.updateRules(context)
-                        },
+                        title = "Domain Blocking (Unavailable)",
+                        subtitle = "Temporarily disabled to keep the per-app firewall stable. It will not route or block any browser traffic.",
+                        checked = false,
+                        onCheckedChange = {},
                         testTag = "setting_ad_blocking"
                     )
 

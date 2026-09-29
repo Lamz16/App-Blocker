@@ -222,7 +222,7 @@ private fun LogItemCard(
     timeFormat: SimpleDateFormat,
     dateFormat: SimpleDateFormat
 ) {
-    val isBlocked = log.action == "BLOCKED"
+    val isBlocked = log.action.startsWith("BLOCKED", ignoreCase = true)
     val date = Date(log.timestamp)
 
     Card(

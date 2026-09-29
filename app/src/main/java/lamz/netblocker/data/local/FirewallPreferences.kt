@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,6 +22,7 @@ class FirewallPreferences(private val context: Context) {
         val AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val AD_BLOCKING_ENABLED = booleanPreferencesKey("ad_blocking_enabled")
+        val CUSTOM_DOMAIN_BLOCKLIST = stringSetPreferencesKey("custom_domain_blocklist")
     }
 
     val isFirewallEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -49,6 +51,10 @@ class FirewallPreferences(private val context: Context) {
 
     val adBlockingEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AD_BLOCKING_ENABLED] ?: false
+    }
+
+    val customDomainBlocklistFlow: Flow<Set<String>> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST] ?: emptySet()
     }
 
     suspend fun setFirewallEnabled(enabled: Boolean) {
@@ -90,6 +96,22 @@ class FirewallPreferences(private val context: Context) {
     suspend fun setAdBlockingEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.AD_BLOCKING_ENABLED] = enabled
+        }
+    }
+
+    suspend fun addCustomBlockedDomain(domain: String) {
+        context.dataStore.edit { preferences ->
+            val domains = preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST].orEmpty().toMutableSet()
+            domains += domain
+            preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST] = domains
+        }
+    }
+
+    suspend fun removeCustomBlockedDomain(domain: String) {
+        context.dataStore.edit { preferences ->
+            val domains = preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST].orEmpty().toMutableSet()
+            domains -= domain
+            preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST] = domains
         }
     }
 }
