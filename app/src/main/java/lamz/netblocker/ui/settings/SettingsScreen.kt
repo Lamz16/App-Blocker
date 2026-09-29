@@ -38,6 +38,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +51,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import lamz.netblocker.ui.theme.StatusAllowed
 import lamz.netblocker.ui.theme.StatusWarning
 import lamz.netblocker.firewall.NetworkVpnService
@@ -61,11 +65,21 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val customBlockedDomains by viewModel.customBlockedDomains.collectAsStateWithLifecycle()
+    val hasVpnPermission by viewModel.hasVpnPermission.collectAsStateWithLifecycle()
+    val isWebsiteBlockGuardEnabled by viewModel.isWebsiteBlockGuardEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var domainInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        viewModel.refreshUsagePermission()
+        viewModel.refreshSystemPermissionStates()
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshSystemPermissionStates()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LazyColumn(
@@ -96,13 +110,19 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Custom Domain Blocklist (Unavailable)",
+                        text = "Custom Website Blocklist",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "DNS filtering has been disabled until a stable forwarding backend is available. Existing entries are not active.",
+                        text = "Accessibility Guard: ${if (isWebsiteBlockGuardEnabled) "Enabled" else "Not enabled"} • VPN permission: ${if (hasVpnPermission) "Granted" else "Not granted"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isWebsiteBlockGuardEnabled) StatusAllowed else StatusWarning
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Block a visible browser URL/domain and every subdomain. The accessibility guard returns to Home when a match is detected.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -118,8 +138,11 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
-                            onClick = {},
-                            enabled = false
+                            onClick = {
+                                viewModel.addCustomBlockedDomain(domainInput)
+                                domainInput = ""
+                            },
+                            enabled = domainInput.isNotBlank()
                         ) { Text("Add") }
                     }
                     if (customBlockedDomains.isNotEmpty()) {
@@ -131,7 +154,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(domain, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                TextButton(onClick = {}, enabled = false) {
+                                TextButton(onClick = { viewModel.removeCustomBlockedDomain(domain) }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Remove $domain", modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("Remove")
@@ -139,6 +162,10 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = {
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }) { Text(if (isWebsiteBlockGuardEnabled) "Manage Website Block Guard" else "Enable Website Block Guard") }
                 }
             }
         }
@@ -173,10 +200,12 @@ fun SettingsScreen(
                     )
 
                     SettingToggleRow(
-                        title = "Domain Blocking (Unavailable)",
-                        subtitle = "Temporarily disabled to keep the per-app firewall stable. It will not route or block any browser traffic.",
-                        checked = false,
-                        onCheckedChange = {},
+                        title = "Website Block Guard",
+                        subtitle = "Managed from Android Accessibility settings. It reads visible browser text only; it does not inspect network traffic.",
+                        checked = isWebsiteBlockGuardEnabled,
+                        onCheckedChange = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
                         testTag = "setting_ad_blocking"
                     )
 

@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">NetBlocker</string>
+    <string name="website_block_guard_description">Blocks visible browser domains from your custom local blocklist.</string>
 </resources>

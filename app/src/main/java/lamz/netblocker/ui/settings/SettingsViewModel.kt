@@ -27,6 +27,10 @@ class SettingsViewModel(
 
     private val _hasUsagePermission = MutableStateFlow(usageStatsHelper.hasUsageStatsPermission())
     val hasUsagePermission = _hasUsagePermission.asStateFlow()
+    private val _hasVpnPermission = MutableStateFlow(repository.hasVpnPermission())
+    val hasVpnPermission = _hasVpnPermission.asStateFlow()
+    private val _isWebsiteBlockGuardEnabled = MutableStateFlow(repository.isWebsiteBlockGuardEnabled())
+    val isWebsiteBlockGuardEnabled = _isWebsiteBlockGuardEnabled.asStateFlow()
 
     val customBlockedDomains: StateFlow<Set<String>> = repository.customDomainBlocklistFlow
         .stateIn(
@@ -57,6 +61,12 @@ class SettingsViewModel(
 
     fun refreshUsagePermission() {
         _hasUsagePermission.value = usageStatsHelper.hasUsageStatsPermission()
+    }
+
+    fun refreshSystemPermissionStates() {
+        refreshUsagePermission()
+        _hasVpnPermission.value = repository.hasVpnPermission()
+        _isWebsiteBlockGuardEnabled.value = repository.isWebsiteBlockGuardEnabled()
     }
 
     fun setShowSystemApps(show: Boolean) {

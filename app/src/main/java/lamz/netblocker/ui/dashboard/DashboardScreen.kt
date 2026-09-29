@@ -83,7 +83,7 @@ fun DashboardScreen(
         }
     }
 
-    val isProtectionActive = uiState.isVpnServiceRunning || uiState.stats.isProtectionActive
+    val isProtectionActive = uiState.isVpnServiceRunning
 
     fun onToggleProtection(enabled: Boolean) {
         if (enabled) {

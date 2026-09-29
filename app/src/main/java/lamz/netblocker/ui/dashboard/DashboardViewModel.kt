@@ -32,7 +32,9 @@ class DashboardViewModel(
         repository.getLogsFlow()
     ) { stats, isRunning, logs ->
         DashboardUiState(
-            stats = stats.copy(isProtectionActive = isRunning || stats.isProtectionActive),
+            // The service state is authoritative. The persisted preference can
+            // remain true if Android kills the process before onDestroy runs.
+            stats = stats.copy(isProtectionActive = isRunning),
             isVpnServiceRunning = isRunning,
             recentLogs = logs.take(5)
         )

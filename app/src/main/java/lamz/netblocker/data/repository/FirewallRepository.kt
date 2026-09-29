@@ -1,6 +1,9 @@
 package lamz.netblocker.data.repository
 
 import android.content.Context
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.view.accessibility.AccessibilityManager
+import android.net.VpnService
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import lamz.netblocker.data.local.AppRuleDao
@@ -14,6 +17,7 @@ import lamz.netblocker.domain.model.FirewallLog
 import lamz.netblocker.domain.model.InstalledApp
 import lamz.netblocker.domain.model.NetworkType
 import lamz.netblocker.firewall.NetworkMonitor
+import lamz.netblocker.accessibility.WebsiteBlockAccessibilityService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +57,17 @@ class FirewallRepository(
 
     suspend fun setBlockBackgroundGlobal(block: Boolean) {
         preferences.setBlockBackgroundGlobal(block)
+    }
+
+    fun hasVpnPermission(): Boolean = VpnService.prepare(context) == null
+
+    fun isWebsiteBlockGuardEnabled(): Boolean {
+        val manager = context.getSystemService(AccessibilityManager::class.java) ?: return false
+        return manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { service ->
+                service.resolveInfo.serviceInfo.packageName == context.packageName &&
+                    service.resolveInfo.serviceInfo.name == WebsiteBlockAccessibilityService::class.java.name
+            }
     }
 
     suspend fun setAdBlockingEnabled(enabled: Boolean) {
