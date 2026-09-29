@@ -200,21 +200,6 @@ fun SettingsScreen(
                     )
 
                     SettingToggleRow(
-                        title = "Website Block Guard",
-                        subtitle = "Managed from Android Accessibility settings. It reads visible browser text only; it does not inspect network traffic.",
-                        checked = isWebsiteBlockGuardEnabled,
-                        onCheckedChange = {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        },
-                        testTag = "setting_ad_blocking"
-                    )
-
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                    )
-
-                    SettingToggleRow(
                         title = "Block New Apps By Default",
                         subtitle = "Automatically block network access for newly installed applications until manually allowed.",
                         checked = uiState.blockByDefault,
