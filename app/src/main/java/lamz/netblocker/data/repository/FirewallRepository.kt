@@ -35,12 +35,23 @@ class FirewallRepository(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
 
+    private data class CachedInstalledApp(
+        val packageName: String,
+        val appName: String,
+        val isSystemApp: Boolean,
+        val downloadBytes: Long,
+        val uploadBytes: Long
+    )
+
+    @Volatile private var installedAppsCache: List<CachedInstalledApp>? = null
+
     val isFirewallEnabledFlow: Flow<Boolean> = preferences.isFirewallEnabledFlow
     val showSystemAppsFlow: Flow<Boolean> = preferences.showSystemAppsFlow
     val blockByDefaultFlow: Flow<Boolean> = preferences.blockByDefaultFlow
     val blockBackgroundGlobalFlow: Flow<Boolean> = preferences.blockBackgroundGlobalFlow
     val adBlockingEnabledFlow: Flow<Boolean> = preferences.adBlockingEnabledFlow
     val customDomainBlocklistFlow: Flow<Set<String>> = preferences.customDomainBlocklistFlow
+    val appLaunchBlocklistFlow: Flow<Set<String>> = preferences.appLaunchBlocklistFlow
     val activeNetworkTypeFlow: Flow<NetworkType> = networkMonitor.networkType
 
     suspend fun setFirewallEnabled(enabled: Boolean) {
@@ -86,6 +97,12 @@ class FirewallRepository(
         preferences.removeCustomBlockedDomain(domain)
     }
 
+    suspend fun setAppLaunchBlocked(packageName: String, blocked: Boolean) {
+        if (packageName != context.packageName) {
+            preferences.setAppLaunchBlocked(packageName, blocked)
+        }
+    }
+
     fun getLogsFlow(): Flow<List<FirewallLog>> {
         return firewallLogDao.getRecentLogsFlow().map { entities ->
             entities.map { it.toDomain() }
@@ -103,64 +120,74 @@ class FirewallRepository(
     fun getInstalledAppsFlow(): Flow<List<InstalledApp>> {
         return combine(
             appRuleDao.getAllRulesFlow(),
-            showSystemAppsFlow
-        ) { rules, showSystemApps ->
+            showSystemAppsFlow,
+            appLaunchBlocklistFlow
+        ) { rules, showSystemApps, launchBlocklist ->
             withContext(ioDispatcher) {
-                val packageManager = context.packageManager
-                val installedPackages = try {
-                    packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-                } catch (_: Exception) {
-                    emptyList<ApplicationInfo>()
-                }
-
                 val ruleMap = rules.associateBy { it.packageName }
-                val ourPackageName = context.packageName
-
                 val resultList = mutableListOf<InstalledApp>()
 
-                for (appInfo in installedPackages) {
-                    // Do not block ourselves
-                    if (appInfo.packageName == ourPackageName) continue
-
-                    val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    if (isSystem && !showSystemApps) continue
-
-                    val appName = try {
-                        packageManager.getApplicationLabel(appInfo).toString()
-                    } catch (_: Exception) {
-                        appInfo.packageName
-                    }
+                for (appInfo in cachedInstalledApps()) {
+                    if (appInfo.isSystemApp && !showSystemApps) continue
 
                     val existingRuleEntity = ruleMap[appInfo.packageName]
                     val rule = existingRuleEntity?.toDomain() ?: AppNetworkRule(
                         packageName = appInfo.packageName,
-                        appName = appName,
+                        appName = appInfo.appName,
                         isBlocked = false,
                         blockWifi = false,
                         blockMobileData = false,
                         blockBackground = false
                     )
 
-                    val (rx, tx) = usageStatsHelper.getAppUsageToday(appInfo.packageName)
                     resultList.add(
                         InstalledApp(
                             packageName = appInfo.packageName,
-                            appName = appName,
-                            isSystemApp = isSystem,
+                            appName = appInfo.appName,
+                            isSystemApp = appInfo.isSystemApp,
                             rule = rule,
-                            downloadBytes = rx,
-                            uploadBytes = tx,
-                            totalBytes = rx + tx
+                            isLaunchBlocked = appInfo.packageName in launchBlocklist,
+                            downloadBytes = appInfo.downloadBytes,
+                            uploadBytes = appInfo.uploadBytes,
+                            totalBytes = appInfo.downloadBytes + appInfo.uploadBytes
                         )
                     )
                 }
 
                 resultList.sortedWith(
-                    compareByDescending<InstalledApp> { it.rule.isBlocked }
+                    compareByDescending<InstalledApp> { it.isLaunchBlocked || it.rule.isBlocked }
                         .thenBy { it.appName.lowercase() }
                 )
             }
         }
+    }
+
+    private fun cachedInstalledApps(): List<CachedInstalledApp> {
+        installedAppsCache?.let { return it }
+        val packageManager = context.packageManager
+        val cached = try {
+            packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+                .asSequence()
+                .filter { it.packageName != context.packageName }
+                .map { applicationInfo ->
+                    val appName = runCatching {
+                        packageManager.getApplicationLabel(applicationInfo).toString()
+                    }.getOrDefault(applicationInfo.packageName)
+                    val (downloadBytes, uploadBytes) = usageStatsHelper.getAppUsageToday(applicationInfo.packageName)
+                    CachedInstalledApp(
+                        packageName = applicationInfo.packageName,
+                        appName = appName,
+                        isSystemApp = (applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+                        downloadBytes = downloadBytes,
+                        uploadBytes = uploadBytes
+                    )
+                }
+                .toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        installedAppsCache = cached
+        return cached
     }
 
     suspend fun toggleBlock(packageName: String, isBlocked: Boolean) = withContext(ioDispatcher) {

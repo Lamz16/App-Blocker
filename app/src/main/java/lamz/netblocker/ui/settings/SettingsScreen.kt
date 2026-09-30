@@ -110,19 +110,19 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Custom Website Blocklist",
+                        text = "Accessibility Guard",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Accessibility Guard: ${if (isWebsiteBlockGuardEnabled) "Enabled" else "Not enabled"} • VPN permission: ${if (hasVpnPermission) "Granted" else "Not granted"}",
+                        text = "Status: ${if (isWebsiteBlockGuardEnabled) "Enabled" else "Not enabled"} • VPN permission: ${if (hasVpnPermission) "Granted" else "Not granted"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (isWebsiteBlockGuardEnabled) StatusAllowed else StatusWarning
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Block a visible browser URL/domain and every subdomain. The accessibility guard returns to Home when a match is detected.",
+                        text = "Use the Apps tab to block selected apps from opening. Add domains below to also block visible browser URLs and subdomains. Both protections require this accessibility service.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -165,7 +165,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(onClick = {
                         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }) { Text(if (isWebsiteBlockGuardEnabled) "Manage Website Block Guard" else "Enable Website Block Guard") }
+                    }) { Text(if (isWebsiteBlockGuardEnabled) "Manage Accessibility Guard" else "Enable Accessibility Guard") }
                 }
             }
         }

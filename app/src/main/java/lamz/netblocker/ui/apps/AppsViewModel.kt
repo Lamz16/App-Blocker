@@ -37,6 +37,9 @@ class AppsViewModel(
     private val _filter = MutableStateFlow(AppFilter.ALL)
     val filter = _filter.asStateFlow()
 
+    private val _isAccessibilityGuardEnabled = MutableStateFlow(repository.isWebsiteBlockGuardEnabled())
+    val isAccessibilityGuardEnabled = _isAccessibilityGuardEnabled.asStateFlow()
+
     val uiState: StateFlow<AppsUiState> = combine(
         getInstalledAppsUseCase(_query, _filter),
         repository.getInstalledAppsFlow(),
@@ -49,7 +52,7 @@ class AppsViewModel(
             query = currentQuery,
             filter = currentFilter,
             totalAppsCount = allApps.size,
-            blockedAppsCount = allApps.count { it.rule.isBlocked || it.rule.blockWifi || it.rule.blockMobileData }
+            blockedAppsCount = allApps.count { it.isLaunchBlocked || it.rule.isBlocked || it.rule.blockWifi || it.rule.blockMobileData }
         )
     }.stateIn(
         scope = viewModelScope,
@@ -87,5 +90,15 @@ class AppsViewModel(
         viewModelScope.launch {
             toggleAppBlockUseCase.toggleBackground(packageName, blockBackground)
         }
+    }
+
+    fun toggleAppOpening(packageName: String, blocked: Boolean) {
+        viewModelScope.launch {
+            repository.setAppLaunchBlocked(packageName, blocked)
+        }
+    }
+
+    fun refreshAccessibilityGuardState() {
+        _isAccessibilityGuardEnabled.value = repository.isWebsiteBlockGuardEnabled()
     }
 }

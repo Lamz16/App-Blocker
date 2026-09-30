@@ -1,5 +1,8 @@
 package lamz.netblocker.ui.apps
 
+import android.content.ComponentName
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -42,6 +45,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,9 +54,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import lamz.netblocker.accessibility.WebsiteBlockAccessibilityService
 import lamz.netblocker.domain.model.AppFilter
 import lamz.netblocker.domain.model.InstalledApp
 import lamz.netblocker.ui.components.AppIconImage
@@ -68,6 +77,17 @@ fun AppsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val isAccessibilityGuardEnabled by viewModel.isAccessibilityGuardEnabled.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshAccessibilityGuardState()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Column(
         modifier = modifier
@@ -113,6 +133,39 @@ fun AppsScreen(
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        if (!isAccessibilityGuardEnabled) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Enable Accessibility Guard to block app opening",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    androidx.compose.material3.TextButton(onClick = {
+                        val component = ComponentName(context, WebsiteBlockAccessibilityService::class.java)
+                        val intent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
+                            putExtra(EXTRA_ACCESSIBILITY_COMPONENT_NAME, component.flattenToString())
+                        }
+                        runCatching { context.startActivity(intent) }
+                            .onFailure { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    }) {
+                        Text("Grant permission")
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         // Filter Chips row
         Row(
@@ -179,7 +232,8 @@ fun AppsScreen(
                         onToggleMaster = { viewModel.toggleBlock(app.packageName, it) },
                         onToggleWifi = { viewModel.toggleWifi(app.packageName, it) },
                         onToggleMobile = { viewModel.toggleMobileData(app.packageName, it) },
-                        onToggleBackground = { viewModel.toggleBackground(app.packageName, it) }
+                        onToggleBackground = { viewModel.toggleBackground(app.packageName, it) },
+                        onToggleAppOpening = { viewModel.toggleAppOpening(app.packageName, it) }
                     )
                 }
                 item {
@@ -214,17 +268,17 @@ private fun AppItemCard(
     onToggleMaster: (Boolean) -> Unit,
     onToggleWifi: (Boolean) -> Unit,
     onToggleMobile: (Boolean) -> Unit,
-    onToggleBackground: (Boolean) -> Unit
+    onToggleBackground: (Boolean) -> Unit,
+    onToggleAppOpening: (Boolean) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    val isEffectivelyBlocked = app.rule.isBlocked || app.rule.blockWifi || app.rule.blockMobileData
+    val isEffectivelyBlocked = app.isLaunchBlocked || app.rule.isBlocked || app.rule.blockWifi || app.rule.blockMobileData
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable { expanded = !expanded }
             .testTag("app_card_${app.packageName}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -243,7 +297,9 @@ private fun AppItemCard(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { expanded = !expanded }
                 ) {
                     AppIconImage(packageName = app.packageName, size = 44.dp)
                     Column {
@@ -282,7 +338,8 @@ private fun AppItemCard(
                         Spacer(modifier = Modifier.height(2.dp))
 
                         Text(
-                            text = if (app.rule.isBlocked) "Internet: Blocked"
+                            text = if (app.isLaunchBlocked) "App opening: Blocked"
+                            else if (app.rule.isBlocked) "Internet: Blocked"
                             else if (app.rule.blockWifi && app.rule.blockMobileData) "Wi-Fi & Mobile: Blocked"
                             else if (app.rule.blockWifi) "Wi-Fi: Blocked"
                             else if (app.rule.blockMobileData) "Mobile Data: Blocked"
@@ -324,6 +381,37 @@ private fun AppItemCard(
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 14.dp)) {
+                    Text(
+                        text = "Accessibility App Blocking",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Block app opening", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Returns to Home when this app is opened. Requires Accessibility Guard.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = app.isLaunchBlocked,
+                            onCheckedChange = onToggleAppOpening,
+                            modifier = Modifier.testTag("app_opening_toggle_${app.packageName}"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = StatusBlocked,
+                                checkedTrackColor = StatusBlocked.copy(alpha = 0.3f)
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = "Granular Network Controls",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
@@ -444,3 +532,6 @@ private fun formatBytes(bytes: Long): String {
         else -> "$bytes B"
     }
 }
+
+private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+private const val EXTRA_ACCESSIBILITY_COMPONENT_NAME = "android.provider.extra.COMPONENT_NAME"

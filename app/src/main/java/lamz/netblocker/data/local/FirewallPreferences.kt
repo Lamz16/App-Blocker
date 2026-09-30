@@ -23,6 +23,7 @@ class FirewallPreferences(private val context: Context) {
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val AD_BLOCKING_ENABLED = booleanPreferencesKey("ad_blocking_enabled")
         val CUSTOM_DOMAIN_BLOCKLIST = stringSetPreferencesKey("custom_domain_blocklist")
+        val APP_LAUNCH_BLOCKLIST = stringSetPreferencesKey("app_launch_blocklist")
     }
 
     val isFirewallEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -55,6 +56,10 @@ class FirewallPreferences(private val context: Context) {
 
     val customDomainBlocklistFlow: Flow<Set<String>> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST] ?: emptySet()
+    }
+
+    val appLaunchBlocklistFlow: Flow<Set<String>> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_LAUNCH_BLOCKLIST] ?: emptySet()
     }
 
     suspend fun setFirewallEnabled(enabled: Boolean) {
@@ -112,6 +117,14 @@ class FirewallPreferences(private val context: Context) {
             val domains = preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST].orEmpty().toMutableSet()
             domains -= domain
             preferences[PreferencesKeys.CUSTOM_DOMAIN_BLOCKLIST] = domains
+        }
+    }
+
+    suspend fun setAppLaunchBlocked(packageName: String, blocked: Boolean) {
+        context.dataStore.edit { preferences ->
+            val packages = preferences[PreferencesKeys.APP_LAUNCH_BLOCKLIST].orEmpty().toMutableSet()
+            if (blocked) packages += packageName else packages -= packageName
+            preferences[PreferencesKeys.APP_LAUNCH_BLOCKLIST] = packages
         }
     }
 }

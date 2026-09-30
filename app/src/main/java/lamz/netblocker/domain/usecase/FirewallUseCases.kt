@@ -26,8 +26,8 @@ class GetInstalledAppsUseCase(private val repository: FirewallRepository) {
 
                 val matchesFilter = when (currentFilter) {
                     AppFilter.ALL -> true
-                    AppFilter.BLOCKED -> app.rule.isBlocked || app.rule.blockWifi || app.rule.blockMobileData
-                    AppFilter.ALLOWED -> !app.rule.isBlocked && !app.rule.blockWifi && !app.rule.blockMobileData
+                    AppFilter.BLOCKED -> app.isLaunchBlocked || app.rule.isBlocked || app.rule.blockWifi || app.rule.blockMobileData
+                    AppFilter.ALLOWED -> !app.isLaunchBlocked && !app.rule.isBlocked && !app.rule.blockWifi && !app.rule.blockMobileData
                     AppFilter.USER_APPS -> !app.isSystemApp
                     AppFilter.SYSTEM_APPS -> app.isSystemApp
                 }

@@ -24,6 +24,7 @@ class WebsiteBlockAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var blockedDomains: Set<String> = emptySet()
+    @Volatile private var blockedAppPackages: Set<String> = emptySet()
     private var lastBlockedValue: String? = null
     private var lastBlockedAt = 0L
     private lateinit var database: AppDatabase
@@ -36,12 +37,22 @@ class WebsiteBlockAccessibilityService : AccessibilityService() {
                 blockedDomains = it
             }
         }
+        scope.launch {
+            FirewallPreferences(applicationContext).appLaunchBlocklistFlow.collectLatest {
+                blockedAppPackages = it
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
-        if (event.eventType !in watchedEvents || blockedDomains.isEmpty()) return
+        if (event.eventType !in watchedEvents) return
         val browserPackage = event.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && browserPackage in blockedAppPackages) {
+            blockAppOpening(browserPackage)
+            return
+        }
+        if (blockedDomains.isEmpty()) return
         // Never inspect this app's own Settings screen. The custom blocklist is
         // visible there, so scanning every package created false positives.
         if (browserPackage !in supportedBrowserPackages) return
@@ -56,6 +67,30 @@ class WebsiteBlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() = Unit
+
+    private fun blockAppOpening(packageName: String) {
+        val now = System.currentTimeMillis()
+        // Enforcement must never be debounced: every launch attempt needs to
+        // return to Home. Only the user feedback and database log are limited.
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        if (packageName == lastBlockedValue && now - lastBlockedAt < BLOCK_DEBOUNCE_MS) return
+        lastBlockedValue = packageName
+        lastBlockedAt = now
+        mainHandler.post {
+            Toast.makeText(this, "App blocked", Toast.LENGTH_SHORT).show()
+        }
+        scope.launch {
+            database.firewallLogDao().insertLog(
+                FirewallLogEntity(
+                    packageName = packageName,
+                    appName = packageName,
+                    action = "BLOCKED_APP_OPENING",
+                    networkType = "UI",
+                    protocol = "ACCESSIBILITY"
+                )
+            )
+        }
+    }
 
     private fun block(domain: String, browserPackage: String) {
         val now = System.currentTimeMillis()

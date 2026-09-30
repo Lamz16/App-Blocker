@@ -30,6 +30,7 @@ data class InstalledApp(
     val appName: String,
     val isSystemApp: Boolean,
     val rule: AppNetworkRule,
+    val isLaunchBlocked: Boolean = false,
     val downloadBytes: Long = 0L,
     val uploadBytes: Long = 0L,
     val totalBytes: Long = 0L
